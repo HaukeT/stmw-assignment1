@@ -23,10 +23,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.text.ParseException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 
 public class MySAX extends DefaultHandler {
@@ -128,13 +125,20 @@ public class MySAX extends DefaultHandler {
                 }
                 break;
             case "Location":
+
                 currentLocation.add(Characters);
-                currentLocation.addAll(currentAtts);
+                if (!currentAtts.isEmpty()) {
+                    currentLocation.addAll(currentAtts);
+                }
+                else {
+                    currentLocation.addAll(Arrays.asList("", ""));
+                }
                 break;
             case "Country":
                 currentLocation.add(Characters);
                 if (!locationTable.containsKey(currentLocation)) {
-                    locationTable.put(currentLocation, locationTable.size() + 1);
+                    ArrayList<String> tempArrayList = new ArrayList<>(currentLocation);
+                    locationTable.put(tempArrayList, locationTable.size() + 1);
                 }
                 currentLocation.clear();
                 break;
@@ -196,12 +200,16 @@ public class MySAX extends DefaultHandler {
             PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
             locationTable.entrySet().stream()
                     .sorted(Map.Entry.comparingByValue())
-                    .forEach((e) -> ps.println(e.getValue() + "," + CSV.escape(String.valueOf((e.getKey())))));
+                    .forEach((e) -> {
+                        ps.print(e.getValue());
+                        for (String s : e.getKey()) {
+                            ps.print("," + s);
+                        }
+                        ps.println();
+                    });
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        System.out.println(categoryTable.size());
     }
 
 

@@ -15,10 +15,18 @@ import org.xml.sax.helpers.DefaultHandler;
 import org.xml.sax.helpers.XMLReaderFactory;
 
 import java.io.FileReader;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 
 
 public class MySAX extends DefaultHandler {
@@ -69,8 +77,11 @@ public class MySAX extends DefaultHandler {
     ////////////////////////////////////////////////////////////////////
 
     private String Characters = "";
-    HashMap<String, Integer> categories = new HashMap<String, Integer>();
+    private HashMap<String, Integer> categoryTable = new HashMap<String, Integer>();
+    private HashMap<ArrayList<String>, Integer> locationTable = new HashMap<ArrayList<String>, Integer>();
+    private ArrayList<String> currentLocation = new ArrayList<>();
 
+    private ArrayList<String> currentAtts = new ArrayList<>();
 
     public void startDocument() {
         System.out.println("Start document");
@@ -78,10 +89,11 @@ public class MySAX extends DefaultHandler {
 
 
     public void endDocument() {
-        writeCategory();
+
+        writeCategoriesToCSV("categories.csv");
+        writeLocationToCSV("location.csv");
         System.out.println("End document");
     }
-
 
     public void startElement(String uri, String name,
                              String qName, Attributes atts) {
@@ -94,6 +106,9 @@ public class MySAX extends DefaultHandler {
             System.out.println("Attribute: " + atts.getLocalName(i) + "=" + atts.getValue(i));
         }
          */
+        for (int i = 0; i < atts.getLength(); i++) {
+            currentAtts.add(atts.getValue(i));
+        }
         Characters = "";
     }
 
@@ -105,14 +120,35 @@ public class MySAX extends DefaultHandler {
         else
             System.out.println("End element:   {" + uri + "}" + name);
          */
-        if ("Category".equals(qName))
-            duplicateElimator();
+
+        switch (qName) {
+            case "Category":
+                if (!categoryTable.containsKey(Characters)) {
+                    categoryTable.put(Characters, categoryTable.size() + 1);
+                }
+                break;
+            case "Location":
+                currentLocation.add(Characters);
+                currentLocation.addAll(currentAtts);
+                break;
+            case "Country":
+                currentLocation.add(Characters);
+                if (!locationTable.containsKey(currentLocation)) {
+                    locationTable.put(currentLocation, locationTable.size() + 1);
+                }
+                currentLocation.clear();
+                break;
+
+        }
+        currentAtts.clear();
         Characters = "";
     }
 
 
     public void characters(char ch[], int start, int length) {
         //System.out.print("Characters:    \"");
+
+        //TODO performance don't change variables when not necessary
         String normalString = new String(ch, start, length);
         Characters += normalString;
         /*
@@ -142,48 +178,77 @@ public class MySAX extends DefaultHandler {
          */
     }
 
-    public void duplicateElimator() {
-        if (categories.containsKey(Characters)) {
-            return;
-        } else {
-            categories.put(Characters, categories.size() + 1);
+    public void writeCategoriesToCSV(String fileName) {
+        try {
+            PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
+            categoryTable.entrySet().stream()
+                    .sorted(Map.Entry.comparingByValue())
+                    .forEach((e) -> ps.println(e.getValue() + "," + CSV.escape(e.getKey())));
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+
+        System.out.println(categoryTable.size());
     }
 
-    public void writeCategory() {
-        categories.forEach((key, value) -> System.out.println(value + "," + csvEscape(key)));
-        System.out.println(categories.size());
+    public void writeLocationToCSV(String fileName) {
+        try {
+            PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
+            locationTable.entrySet().stream()
+                    .sorted(Map.Entry.comparingByValue())
+                    .forEach((e) -> ps.println(e.getValue() + "," + CSV.escape(String.valueOf((e.getKey())))));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        System.out.println(categoryTable.size());
     }
 
-    public String csvEscape(String value) {
+
+}
+
+/**
+ * CSV Hilfsklasse
+ */
+class CSV {
 
 
-        if (value.contains("\""))
-        {
-            return value.replaceAll("\"","\"\"");
-        }
-
-        if (value.contains("\r"))
-        {
-            return value.replaceAll("\r","\"\r\"");
-        }
-
-        if (value.contains("\n"))
-        {
-            return value.replaceAll("\n","\"\n\"");
-        }
-
-        if (value.equals(""))
-        {
+    /**
+     * Escaped den String nach CSV Specification falls nötig.
+     *
+     * @param value der String der Escaped werden soll
+     * @return den leeren String, falls value gleich null war, sonst einen validen String
+     */
+    public static String escape(String value) {
+        // null Fall
+        if (value == null)
             return "";
-        }
-
-        if (value.contains(",")) {
-            return "\"" + value + "\"";
-        } else {
+            // enthält Sonderzeichen
+        else if (value.contains(",")
+                || value.contains("\n")
+                || value.contains("\r")
+                || value.contains("\""))
+            return "\"" + value.replaceAll("\"", "\"\"") + "\"";
+            // alles ok
+        else
             return value;
-        }
     }
 
+
+}
+
+
+class FileWriter {
+    public static void createFile() {
+        //initialize Path object
+        Path path = Paths.get("D:file.txt");
+        //create file
+        try {
+            Path createdFilePath = Files.createFile(path);
+            System.out.println("Created a file at : " + createdFilePath);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
 }

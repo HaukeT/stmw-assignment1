@@ -74,9 +74,12 @@ public class MySAX extends DefaultHandler {
     ////////////////////////////////////////////////////////////////////
 
     private String Characters = "";
-    private HashMap<String, Integer> categoryTable = new HashMap<String, Integer>();
-    private HashMap<ArrayList<String>, Integer> locationTable = new HashMap<ArrayList<String>, Integer>();
+    private HashMap<String, Integer> categoryTable = new HashMap<>();
+    private HashMap<ArrayList<String>, Integer> locationTable = new HashMap<>();
     private ArrayList<String> currentLocation = new ArrayList<>();
+    private HashMap<Integer, ArrayList<String>> itemTable = new HashMap<>();
+    private int currentItemID;
+    private String currentItemName;
 
     private ArrayList<String> currentAtts = new ArrayList<>();
 
@@ -142,6 +145,12 @@ public class MySAX extends DefaultHandler {
                 }
                 currentLocation.clear();
                 break;
+            case "Item":
+                currentItemID = Integer.parseInt(currentAtts.get(0));
+            case "Name":
+                if (!itemTable.containsKey(currentItemID)) {
+                    ArrayList<String> tempArrayList = new ArrayList<>();
+                }
 
         }
         currentAtts.clear();

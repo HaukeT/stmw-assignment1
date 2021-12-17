@@ -18,9 +18,6 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.*;
@@ -41,6 +38,11 @@ public class MySAX extends DefaultHandler {
             FileReader r = new FileReader(args[i]);
             xr.parse(new InputSource(r));
         }
+
+        handler.writeItemCategoriesToCSV("itemCategories.csv");
+        handler.writeItemToCSV("item.csv");
+        handler.writeCategoriesToCSV("categories.csv");
+        handler.writeLocationToCSV("location.csv");
     }
 
 
@@ -73,13 +75,22 @@ public class MySAX extends DefaultHandler {
     // Event handlers.
     ////////////////////////////////////////////////////////////////////
 
-    private String Characters = "";
+    private String characters = "";
     private HashMap<String, Integer> categoryTable = new HashMap<>();
     private HashMap<ArrayList<String>, Integer> locationTable = new HashMap<>();
     private ArrayList<String> currentLocation = new ArrayList<>();
     private HashMap<Integer, ArrayList<String>> itemTable = new HashMap<>();
     private int currentItemID;
-    private String currentItemName;
+    private int currentLocationID;
+
+    private HashMap<Integer, Integer> itemCategories = new HashMap<>();
+
+    private HashMap<String, List<String>> allSellers = new HashMap<>();
+    private HashMap<String, List<String>> allBidders = new HashMap<>();
+
+    private List<String> currentBidder = new ArrayList<>();
+
+    private Deque<Touple> stack = new LinkedList<>();
 
     private ArrayList<String> currentAtts = new ArrayList<>();
 
@@ -90,9 +101,6 @@ public class MySAX extends DefaultHandler {
 
     public void endDocument() {
 
-        writeCategoriesToCSV("categories.csv");
-        writeLocationToCSV("location.csv");
-        System.out.println("End document");
     }
 
     public void startElement(String uri, String name,
@@ -106,12 +114,35 @@ public class MySAX extends DefaultHandler {
             System.out.println("Attribute: " + atts.getLocalName(i) + "=" + atts.getValue(i));
         }
          */
+        currentAtts.clear();
         for (int i = 0; i < atts.getLength(); i++) {
             currentAtts.add(atts.getValue(i));
         }
-        Characters = "";
+
+        Touple touple = new Touple(qName, currentAtts, "");
+        stack.push(touple);
+
+        if (qName.equals("Item")) {
+            currentItemID = Integer.parseInt(currentAtts.get(0));
+        }
+
+        if (qName.equals("Bidder")) {
+            List<String> tempBidderList = new ArrayList<>();
+            //added an empty slot to fill it later with the possible seller rating
+            tempBidderList.addAll(Arrays.asList("" + currentLocationID, "", currentAtts.get(0)));
+            allBidders.put(currentAtts.get(1), tempBidderList);
+        }
+
+        characters = "";
     }
 
+    /*
+    hashmap von allen sellern mit user id (name) und sellerRating
+    hashmap von allen bidder mit user id (name) und bidderRating
+    bei end document auf keys verschmelzen und userIDs generieren #big brain
+
+
+     */
 
     public void endElement(String uri, String name, String qName) {
         /*
@@ -121,49 +152,78 @@ public class MySAX extends DefaultHandler {
             System.out.println("End element:   {" + uri + "}" + name);
          */
 
+        /*
+        if (qName.equals("Item")){
+            for (element:currentItemXML) {
+
+            }
+        }
+        */
+        Touple currElement = stack.pop();
+
+        if ( stack.isEmpty() )
+            return;
+
+        Touple parentElement = stack.peek();
+        String parentqName = parentElement.qNameElement;
+        List<String> parentAtts = parentElement.attributeList;
+        String parentCharacters = parentElement.elementContent;
+
+
         switch (qName) {
             case "Category":
-                if (!categoryTable.containsKey(Characters)) {
-                    categoryTable.put(Characters, categoryTable.size() + 1);
+                if (!categoryTable.containsKey(characters)) {
+                    categoryTable.put(characters, categoryTable.size() + 1);
+                    itemCategories.put(categoryTable.size() + 1, currentItemID);
                 }
                 break;
             case "Location":
-
-                currentLocation.add(Characters);
-                if (!currentAtts.isEmpty()) {
-                    currentLocation.addAll(currentAtts);
-                }
-                else {
+                currentLocation.add(characters);
+                if ( !currElement.attributeList.isEmpty()) {
+                    currentLocation.addAll(currElement.attributeList);
+                } else {
                     currentLocation.addAll(Arrays.asList("", ""));
                 }
                 break;
             case "Country":
-                currentLocation.add(Characters);
+                currentLocation.add(characters);
                 if (!locationTable.containsKey(currentLocation)) {
                     ArrayList<String> tempArrayList = new ArrayList<>(currentLocation);
-                    locationTable.put(tempArrayList, locationTable.size() + 1);
+                    currentLocationID = locationTable.size() + 1;
+                    locationTable.put(tempArrayList, currentLocationID);
                 }
                 currentLocation.clear();
                 break;
             case "Item":
-                currentItemID = Integer.parseInt(currentAtts.get(0));
+
+                break;
             case "Name":
                 if (!itemTable.containsKey(currentItemID)) {
                     ArrayList<String> tempArrayList = new ArrayList<>();
+                    tempArrayList.add(characters);
+                    tempArrayList.add("" + currentLocationID);
+                    itemTable.put(currentItemID, tempArrayList);
                 }
+                break;
+            case "Seller":
+                List<String> tempSellerList = new ArrayList<>();
+                tempSellerList.addAll(Arrays.asList("" + currentLocationID, currentAtts.get(0)));
+                allSellers.put(currentAtts.get(1), tempSellerList);
+                break;
+            case "Bidder":
 
+                break;
         }
         currentAtts.clear();
-        Characters = "";
+        characters = "";
     }
 
 
     public void characters(char ch[], int start, int length) {
         //System.out.print("Characters:    \"");
 
-        //TODO performance don't change variables when not necessary
         String normalString = new String(ch, start, length);
-        Characters += normalString;
+        characters += normalString;
         /*
         for (int i = start; i < start + length; i++) {
             switch (ch[i]) {
@@ -191,6 +251,14 @@ public class MySAX extends DefaultHandler {
          */
     }
 
+    /*
+    public void mergeAllUsers(){
+        HashMap<String, List<String>> mergedUsers = new HashMap<>();
+        allSellers.forEach((e) -> {allBidders.forEach(());});
+        mergedUsers.put()
+    }
+    */
+
     public void writeCategoriesToCSV(String fileName) {
         try {
             PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
@@ -208,14 +276,43 @@ public class MySAX extends DefaultHandler {
         try {
             PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
             locationTable.entrySet().stream()
-                    .sorted(Map.Entry.comparingByValue())
+                    .sorted(Map.Entry.comparingByKey(Comparator.comparing(x->x.get(0))))
                     .forEach((e) -> {
                         ps.print(e.getValue());
                         for (String s : e.getKey()) {
-                            ps.print("," + s);
+                            ps.print("," + CSV.escape(s));
                         }
                         ps.println();
                     });
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void writeItemToCSV(String fileName) {
+        try {
+            PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
+            itemTable.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .distinct()
+                    .forEach((e) -> {
+                        ps.print(e.getKey());
+                        for (String s : e.getValue()) {
+                            ps.print("," + CSV.escape(s));
+                        }
+                        ps.println();
+                    });
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void writeItemCategoriesToCSV(String fileName) {
+        try {
+            PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
+            itemCategories.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach((e) -> ps.println(e.getKey() + "," + e.getValue()));
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -228,7 +325,6 @@ public class MySAX extends DefaultHandler {
  * CSV Hilfsklasse
  */
 class CSV {
-
 
     /**
      * Escaped den String nach CSV Specification falls nötig.
@@ -255,17 +351,15 @@ class CSV {
 }
 
 
-class FileWriter {
-    public static void createFile() {
-        //initialize Path object
-        Path path = Paths.get("D:file.txt");
-        //create file
-        try {
-            Path createdFilePath = Files.createFile(path);
-            System.out.println("Created a file at : " + createdFilePath);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+class Touple {
+    String qNameElement;
+    List<String> attributeList;
+    String elementContent;
+
+    Touple(String qName, List<String> attributes, String characters) {
+        qNameElement = qName;
+        attributeList = new ArrayList<>(attributes);
+        elementContent = characters;
     }
 
 }

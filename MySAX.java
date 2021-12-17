@@ -43,6 +43,7 @@ public class MySAX extends DefaultHandler {
         handler.writeItemToCSV("item.csv");
         handler.writeCategoriesToCSV("categories.csv");
         handler.writeLocationToCSV("location.csv");
+        handler.writeMergedUsersToCSV("user.csv");
     }
 
 
@@ -161,7 +162,7 @@ public class MySAX extends DefaultHandler {
         */
         Touple currElement = stack.pop();
 
-        if ( stack.isEmpty() )
+        if (stack.isEmpty())
             return;
 
         Touple parentElement = stack.peek();
@@ -179,7 +180,7 @@ public class MySAX extends DefaultHandler {
                 break;
             case "Location":
                 currentLocation.add(characters);
-                if ( !currElement.attributeList.isEmpty()) {
+                if (!currElement.attributeList.isEmpty()) {
                     currentLocation.addAll(currElement.attributeList);
                 } else {
                     currentLocation.addAll(Arrays.asList("", ""));
@@ -207,7 +208,7 @@ public class MySAX extends DefaultHandler {
                 break;
             case "Seller":
                 List<String> tempSellerList = new ArrayList<>();
-                tempSellerList.addAll(Arrays.asList("" + currentLocationID, currentAtts.get(0)));
+                tempSellerList.addAll(Arrays.asList("" + currentLocationID, currentAtts.get(0), ""));
                 allSellers.put(currentAtts.get(1), tempSellerList);
                 break;
             case "Bidder":
@@ -251,13 +252,43 @@ public class MySAX extends DefaultHandler {
          */
     }
 
-    /*
-    public void mergeAllUsers(){
-        HashMap<String, List<String>> mergedUsers = new HashMap<>();
-        allSellers.forEach((e) -> {allBidders.forEach(());});
-        mergedUsers.put()
+
+    public HashMap<Integer, List<String>> mergeAllUsers() {
+        HashMap<Integer, List<String>> mergedUsers = new HashMap<>();
+        int userID = 0;
+
+        for (Map.Entry<String, List<String>> sellerEntry : allSellers.entrySet()) {
+            if (allBidders.containsKey(sellerEntry.getKey())) {
+                List<String> tempList = new ArrayList<>();
+                tempList.add(sellerEntry.getKey());
+                tempList.addAll(sellerEntry.getValue());
+                if (tempList.size()==4)
+                tempList.set(3, allBidders.get(sellerEntry.getKey()).get(2));
+                else tempList.add(allBidders.get(sellerEntry.getKey()).get(2));
+                mergedUsers.put(userID, tempList);
+                userID++;
+                allBidders.remove(sellerEntry.getKey());
+            } else {
+                List<String> tempList = new ArrayList<>();
+                tempList.add(sellerEntry.getKey());
+                tempList.addAll(sellerEntry.getValue());
+                mergedUsers.put(userID, tempList);
+                userID++;
+            }
+        }
+
+        if (!allBidders.isEmpty()) {
+            for (Map.Entry<String, List<String>> bidderEntry : allBidders.entrySet()) {
+                List<String> tempList = new ArrayList<>();
+                tempList.add(bidderEntry.getKey());
+                tempList.addAll(bidderEntry.getValue());
+                mergedUsers.put(userID, tempList);
+                userID++;
+            }
+        }
+        return mergedUsers;
     }
-    */
+
 
     public void writeCategoriesToCSV(String fileName) {
         try {
@@ -276,7 +307,7 @@ public class MySAX extends DefaultHandler {
         try {
             PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
             locationTable.entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey(Comparator.comparing(x->x.get(0))))
+                    .sorted(Map.Entry.comparingByKey(Comparator.comparing(x -> x.get(0))))
                     .forEach((e) -> {
                         ps.print(e.getValue());
                         for (String s : e.getKey()) {
@@ -313,6 +344,24 @@ public class MySAX extends DefaultHandler {
             itemCategories.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .forEach((e) -> ps.println(e.getKey() + "," + e.getValue()));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void writeMergedUsersToCSV(String fileName) {
+        try {
+            PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
+            mergeAllUsers().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .distinct()
+                    .forEach((e) -> {
+                        ps.print(e.getKey());
+                        for (String s : e.getValue()) {
+                            ps.print("," + CSV.escape(s));
+                        }
+                        ps.println();
+                    });
         } catch (IOException e) {
             e.printStackTrace();
         }

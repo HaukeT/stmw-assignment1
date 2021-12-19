@@ -16,5 +16,6 @@ mysql -u stmw ad < load.sql
 
 # Remove all temporary files
 rm *.class
+rm *.csv
 
 

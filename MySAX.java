@@ -50,10 +50,6 @@ public class MySAX extends DefaultHandler {
         handler.writeToCSV("auction.csv", handler.finishedAuctionTable);
         handler.insertIntoBidTable();
         handler.writeToCSV("bid.csv", handler.finishedBidTable);
-
-        System.out.println(handler.xd);
-        System.out.println(handler.xp);
-        System.out.println(handler.itemTable.size());
     }
 
 
@@ -115,29 +111,9 @@ public class MySAX extends DefaultHandler {
 
     private ArrayList<String> currentAtts = new ArrayList<>();
 
-    public void startDocument() {
-        System.out.println("Start document");
-    }
-
-
-    public void endDocument() {
-
-    }
-
-    int xd = 0;
-    int xp = 0;
 
     public void startElement(String uri, String name,
                              String qName, Attributes atts) {
-        /*
-        if ("".equals(uri))
-            System.out.println("Start element: " + qName);
-        else
-            System.out.println("Start element: {" + uri + "}" + name);
-        for (int i = 0; i < atts.getLength(); i++) {
-            System.out.println("Attribute: " + atts.getLocalName(i) + "=" + atts.getValue(i));
-        }
-         */
         currentAtts.clear();
         for (int i = 0; i < atts.getLength(); i++) {
             currentAtts.add(atts.getValue(i));
@@ -149,7 +125,6 @@ public class MySAX extends DefaultHandler {
         if (qName.equals("Item")) {
             currentItemID = Integer.parseInt(currentAtts.get(0));
             itemTable.put(currentItemID, currentLocationID);
-            xd++;
         }
 
         if (qName.equals("Bidder")) {
@@ -163,29 +138,7 @@ public class MySAX extends DefaultHandler {
         characters = "";
     }
 
-    /*
-    hashmap von allen sellern mit user id (name) und sellerRating
-    hashmap von allen bidder mit user id (name) und bidderRating
-    bei end document auf keys verschmelzen und userIDs generieren #big brain
-
-
-     */
-
     public void endElement(String uri, String name, String qName) {
-        /*
-        if ("".equals(uri))
-            System.out.println("End element: " + qName);
-        else
-            System.out.println("End element:   {" + uri + "}" + name);
-         */
-
-        /*
-        if (qName.equals("Item")){
-            for (element:currentItemXML) {
-
-            }
-        }
-        */
         Touple currElement = stack.pop();
 
         switch (qName) {
@@ -196,6 +149,7 @@ public class MySAX extends DefaultHandler {
                 itemCategories.add(Map.entry(categoryTable.get(characters), currentItemID));
                 break;
             case "Location":
+                currentLocation.clear();
                 currentLocation.add(characters);
                 if (!currElement.attributeList.isEmpty()) {
                     currentLocation.addAll(currElement.attributeList);
@@ -212,6 +166,17 @@ public class MySAX extends DefaultHandler {
                 }
                 currentLocation.clear();
                 break;
+            case "Bidder":
+                if (!currentLocation.isEmpty()) {
+                    if (!locationTable.containsKey(currentLocation)) {
+                        currentLocation.add("");
+                        ArrayList<String> tempArrayList = new ArrayList<>(currentLocation);
+                        currentLocationID = locationTable.size() + 1;
+                        locationTable.put(tempArrayList, currentLocationID);
+                    }
+                }
+                break;
+
             case "Seller":
                 List<String> tempSellerList = new ArrayList<>();
                 tempSellerList.addAll(Arrays.asList("" + currentLocationID, currentAtts.get(0), ""));
@@ -272,10 +237,6 @@ public class MySAX extends DefaultHandler {
                 bidTable.add(new ArrayList<>(currentBid));
                 currentBid.clear();
                 break;
-            case "Item": {
-                xp++;
-                break;
-            }
         }
         currentAtts.clear();
         characters = "";
@@ -295,35 +256,8 @@ public class MySAX extends DefaultHandler {
     }
 
     public void characters(char ch[], int start, int length) {
-        //System.out.print("Characters:    \"");
-
         String normalString = new String(ch, start, length);
         characters += normalString.replaceAll("^([\n\r\\s]+)", "");
-        /*
-        for (int i = start; i < start + length; i++) {
-            switch (ch[i]) {
-                case '\\':
-                    System.out.print("\\\\");
-                    break;
-                case '"':
-                    System.out.print("\\\"");
-                    break;
-                case '\n':
-                    System.out.print("\\n");
-                    break;
-                case '\r':
-                    System.out.print("\\r");
-                    break;
-                case '\t':
-                    System.out.print("\\t");
-                    break;
-                default:
-                    System.out.print(ch[i]);
-                    break;
-            }
-        }
-        System.out.print("\"\n");
-         */
     }
 
 
@@ -382,7 +316,7 @@ public class MySAX extends DefaultHandler {
         }
     }
 
-    public void insertIntoBidTable(){
+    public void insertIntoBidTable() {
         int currentBidID = 0;
         Map<String, Integer> bidderMapID = new HashMap<>();
         Map<String, Integer> auctionMapItemID = new HashMap<>();
@@ -418,8 +352,6 @@ public class MySAX extends DefaultHandler {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        System.out.println(categoryTable.size());
     }
 
     public void writeLocationToCSV(String fileName) {
@@ -445,7 +377,6 @@ public class MySAX extends DefaultHandler {
             itemTable.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .forEach((e) -> ps.println(e.getKey() + "," + e.getValue()));
-            System.out.println(itemTable.entrySet().stream().distinct().count());
         } catch (IOException e) {
             e.printStackTrace();
         }

@@ -20,6 +20,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.*;
 
 
@@ -39,11 +40,20 @@ public class MySAX extends DefaultHandler {
             xr.parse(new InputSource(r));
         }
 
-        handler.writeItemCategoriesToCSV("itemCategories.csv");
+        handler.writeItemCategoriesToCSV("Item_Categories.csv");
         handler.writeItemToCSV("item.csv");
-        handler.writeCategoriesToCSV("categories.csv");
+        handler.writeCategoriesToCSV("category.csv");
         handler.writeLocationToCSV("location.csv");
-        handler.writeMergedUsersToCSV("user.csv");
+        handler.mergedUsers = handler.mergeAllUsers();
+        handler.writeToCSV("user.csv", handler.mergedUsers);
+        handler.insertIntoAuctionTable();
+        handler.writeToCSV("auction.csv", handler.finishedAuctionTable);
+        handler.insertIntoBidTable();
+        handler.writeToCSV("bid.csv", handler.finishedBidTable);
+
+        System.out.println(handler.xd);
+        System.out.println(handler.xp);
+        System.out.println(handler.itemTable.size());
     }
 
 
@@ -80,16 +90,26 @@ public class MySAX extends DefaultHandler {
     private HashMap<String, Integer> categoryTable = new HashMap<>();
     private HashMap<ArrayList<String>, Integer> locationTable = new HashMap<>();
     private ArrayList<String> currentLocation = new ArrayList<>();
-    private HashMap<Integer, ArrayList<String>> itemTable = new HashMap<>();
+    private HashMap<Integer, Integer> itemTable = new HashMap<>();
     private int currentItemID;
     private int currentLocationID;
+    private String currentBidderName;
 
-    private HashMap<Integer, Integer> itemCategories = new HashMap<>();
+    private String currentSellerName;
+
+    private List<Map.Entry<Integer, Integer>> itemCategories = new ArrayList<>();
 
     private HashMap<String, List<String>> allSellers = new HashMap<>();
     private HashMap<String, List<String>> allBidders = new HashMap<>();
+    private HashMap<Integer, List<String>> mergedUsers = new HashMap<>();
 
-    private List<String> currentBidder = new ArrayList<>();
+    private List<List<String>> auctionTable = new ArrayList<>();
+    private HashMap<Integer, List<String>> finishedAuctionTable = new HashMap<>();
+    private List<String> currentAuction = new ArrayList<>();
+
+    private List<List<String>> bidTable = new ArrayList<>();
+    private List<String> currentBid = new ArrayList<>();
+    private Map<Integer, List<String>> finishedBidTable = new HashMap<>();
 
     private Deque<Touple> stack = new LinkedList<>();
 
@@ -103,6 +123,9 @@ public class MySAX extends DefaultHandler {
     public void endDocument() {
 
     }
+
+    int xd = 0;
+    int xp = 0;
 
     public void startElement(String uri, String name,
                              String qName, Attributes atts) {
@@ -125,6 +148,8 @@ public class MySAX extends DefaultHandler {
 
         if (qName.equals("Item")) {
             currentItemID = Integer.parseInt(currentAtts.get(0));
+            itemTable.put(currentItemID, currentLocationID);
+            xd++;
         }
 
         if (qName.equals("Bidder")) {
@@ -132,6 +157,7 @@ public class MySAX extends DefaultHandler {
             //added an empty slot to fill it later with the possible seller rating
             tempBidderList.addAll(Arrays.asList("" + currentLocationID, "", currentAtts.get(0)));
             allBidders.put(currentAtts.get(1), tempBidderList);
+            currentBidderName = currentAtts.get(1);
         }
 
         characters = "";
@@ -162,21 +188,12 @@ public class MySAX extends DefaultHandler {
         */
         Touple currElement = stack.pop();
 
-        if (stack.isEmpty())
-            return;
-
-        Touple parentElement = stack.peek();
-        String parentqName = parentElement.qNameElement;
-        List<String> parentAtts = parentElement.attributeList;
-        String parentCharacters = parentElement.elementContent;
-
-
         switch (qName) {
             case "Category":
                 if (!categoryTable.containsKey(characters)) {
                     categoryTable.put(characters, categoryTable.size() + 1);
-                    itemCategories.put(categoryTable.size() + 1, currentItemID);
                 }
+                itemCategories.add(Map.entry(categoryTable.get(characters), currentItemID));
                 break;
             case "Location":
                 currentLocation.add(characters);
@@ -195,36 +212,93 @@ public class MySAX extends DefaultHandler {
                 }
                 currentLocation.clear();
                 break;
-            case "Item":
-
-                break;
-            case "Name":
-                if (!itemTable.containsKey(currentItemID)) {
-                    ArrayList<String> tempArrayList = new ArrayList<>();
-                    tempArrayList.add(characters);
-                    tempArrayList.add("" + currentLocationID);
-                    itemTable.put(currentItemID, tempArrayList);
-                }
-                break;
             case "Seller":
                 List<String> tempSellerList = new ArrayList<>();
                 tempSellerList.addAll(Arrays.asList("" + currentLocationID, currentAtts.get(0), ""));
                 allSellers.put(currentAtts.get(1), tempSellerList);
+                currentSellerName = currentAtts.get(1);
                 break;
-            case "Bidder":
-
+            case "Name":
+                currentAuction.add(characters);
                 break;
+            case "Currently":
+                currentAuction.add(strip(characters));
+                break;
+            case "Buy_Price":
+                currentAuction.add(strip(characters));
+                break;
+            case "First_Bid":
+                //if there is no Buy_Price add empty field
+                if (currentAuction.size() < 3)
+                    currentAuction.add("");
+                currentAuction.add(strip(characters));
+                break;
+            case "Number_of_Bids":
+                currentAuction.add(characters);
+                break;
+            case "Started":
+                //Date is "MMM-dd-yy HH:mm:ss"
+                //TIMESTAMP is "yyyy-MM-dd'T'HH:mm:ss"
+                try {
+                    currentAuction.add("" + reformatDate(characters));
+                } catch (ParseException e) {
+                    e.printStackTrace();
+                }
+                break;
+            case "Ends":
+                try {
+                    currentAuction.add("" + reformatDate(characters));
+                } catch (ParseException e) {
+                    e.printStackTrace();
+                }
+                currentAuction.add("" + currentItemID);
+                break;
+            case "Description":
+                currentAuction.addAll(Arrays.asList(currentSellerName, limitStringLength(characters)));
+                auctionTable.add(new ArrayList<>(currentAuction));
+                currentAuction.clear();
+                break;
+            case "Time":
+                currentBid.add("" + currentItemID);
+                currentBid.add(currentBidderName);
+                try {
+                    currentBid.add(reformatDate(characters));
+                } catch (ParseException e) {
+                    e.printStackTrace();
+                }
+                break;
+            case "Amount":
+                currentBid.add(strip(characters));
+                bidTable.add(new ArrayList<>(currentBid));
+                currentBid.clear();
+                break;
+            case "Item": {
+                xp++;
+                break;
+            }
         }
         currentAtts.clear();
         characters = "";
     }
 
+    private String limitStringLength(String str) {
+        if (str.length() >= 4000)
+            return str.substring(0, 4000);
+        return str;
+    }
+
+
+    private String reformatDate(final String str) throws ParseException {
+        SimpleDateFormat formatter = new SimpleDateFormat("MMM-dd-yy HH:mm:ss", Locale.US);
+        SimpleDateFormat iso = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+        return iso.format(formatter.parse(str));
+    }
 
     public void characters(char ch[], int start, int length) {
         //System.out.print("Characters:    \"");
 
         String normalString = new String(ch, start, length);
-        characters += normalString;
+        characters += normalString.replaceAll("^([\n\r\\s]+)", "");
         /*
         for (int i = start; i < start + length; i++) {
             switch (ch[i]) {
@@ -262,8 +336,8 @@ public class MySAX extends DefaultHandler {
                 List<String> tempList = new ArrayList<>();
                 tempList.add(sellerEntry.getKey());
                 tempList.addAll(sellerEntry.getValue());
-                if (tempList.size()==4)
-                tempList.set(3, allBidders.get(sellerEntry.getKey()).get(2));
+                if (tempList.size() == 4)
+                    tempList.set(3, allBidders.get(sellerEntry.getKey()).get(2));
                 else tempList.add(allBidders.get(sellerEntry.getKey()).get(2));
                 mergedUsers.put(userID, tempList);
                 userID++;
@@ -287,6 +361,51 @@ public class MySAX extends DefaultHandler {
             }
         }
         return mergedUsers;
+    }
+
+
+    public void insertIntoAuctionTable() {
+        int currentAuctionID = 0;
+        Map<String, Integer> userMapID = new HashMap<>();
+
+        for (Map.Entry<Integer, List<String>> user : mergedUsers.entrySet()) {
+            // map user name to userID
+            userMapID.put(user.getValue().get(0), user.getKey());
+        }
+
+        for (List<String> entry : auctionTable) {
+            List<String> tempList = new ArrayList<>(entry);
+            //at slot 8 replace Seller name with user id, by asking userMapID for the userID with the Seller name
+            tempList.set(8, "" + userMapID.get(entry.get(8)));
+            finishedAuctionTable.put(currentAuctionID, tempList);
+            currentAuctionID++;
+        }
+    }
+
+    public void insertIntoBidTable(){
+        int currentBidID = 0;
+        Map<String, Integer> bidderMapID = new HashMap<>();
+        Map<String, Integer> auctionMapItemID = new HashMap<>();
+
+        for (Map.Entry<Integer, List<String>> user : mergedUsers.entrySet()) {
+            // map user name to userID
+            bidderMapID.put(user.getValue().get(0), user.getKey());
+        }
+
+        for (Map.Entry<Integer, List<String>> auction : finishedAuctionTable.entrySet()) {
+            //map auctionID to its ItemID
+            auctionMapItemID.put(auction.getValue().get(7), auction.getKey());
+        }
+
+        for (List<String> entry : bidTable) {
+            List<String> tempList = new ArrayList<>(entry);
+            //at slot 1 replace BidderName with userID, by asking bidderMapID for the userID with the Bidder name
+            tempList.set(1, "" + bidderMapID.get(entry.get(1)));
+            //at slot 0 replace AuctionName with auctionID, by asking auctionMapItemID for the
+            tempList.set(0, "" + auctionMapItemID.get(entry.get(0)));
+            finishedBidTable.put(currentBidID, tempList);
+            currentBidID++;
+        }
     }
 
 
@@ -325,14 +444,8 @@ public class MySAX extends DefaultHandler {
             PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
             itemTable.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
-                    .distinct()
-                    .forEach((e) -> {
-                        ps.print(e.getKey());
-                        for (String s : e.getValue()) {
-                            ps.print("," + CSV.escape(s));
-                        }
-                        ps.println();
-                    });
+                    .forEach((e) -> ps.println(e.getKey() + "," + e.getValue()));
+            System.out.println(itemTable.entrySet().stream().distinct().count());
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -341,7 +454,7 @@ public class MySAX extends DefaultHandler {
     public void writeItemCategoriesToCSV(String fileName) {
         try {
             PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
-            itemCategories.entrySet().stream()
+            itemCategories.stream()
                     .sorted(Map.Entry.comparingByKey())
                     .forEach((e) -> ps.println(e.getKey() + "," + e.getValue()));
         } catch (IOException e) {
@@ -349,10 +462,10 @@ public class MySAX extends DefaultHandler {
         }
     }
 
-    public void writeMergedUsersToCSV(String fileName) {
+    public void writeToCSV(String fileName, Map<Integer, List<String>> map) {
         try {
             PrintStream ps = new PrintStream(fileName, StandardCharsets.UTF_8);
-            mergeAllUsers().entrySet().stream()
+            map.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .distinct()
                     .forEach((e) -> {
